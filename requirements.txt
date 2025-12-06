@@ -1,0 +1,5 @@
+Pillow
+reportlab
+svglib
+rlPyCairo
+requests
