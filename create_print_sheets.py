@@ -2,7 +2,7 @@ import os
 from PIL import Image
 
 # --- Configuration ---
-DPI = 600  # Dots Per Inch, a standard for printing
+DPI = 600  # Dots Per Inch
 PAPER_WIDTH_INCHES = 11
 PAPER_HEIGHT_INCHES = 8.5
 MARGIN_INCHES = 0.7

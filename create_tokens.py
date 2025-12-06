@@ -252,7 +252,7 @@ def create_reminder_token(character_data, font_path, background_path, image_size
 
         if reminder:
             W, H = image_size
-            font_size = 60
+            font_size = 70
             font = ImageFont.truetype(font_path, font_size)
             
             # Wrap text
@@ -287,7 +287,20 @@ def create_reminder_token(character_data, font_path, background_path, image_size
             print(f'W:{W} H:{H}')
             char_img_obj = _get_character_image(character_data)
             if char_img_obj:
-                _add_character_image(reminder_image, char_img_obj, image_size, pos=image_pos, scale_factor=0.70)
+                # Determine scale by image height
+                _, img_h = char_img_obj.size
+                _, pos_y = image_pos
+                padding_y = 200
+                scale_down = 0.97
+                scale = .525
+                determine_scale_img = char_img_obj.copy()
+                while img_h + pos_y > text_y - padding_y:
+                    scale *= scale_down
+                    determine_scale_img = determine_scale_img.resize((int(char_img_obj.width * scale) ,
+                                                       int(char_img_obj.height * scale)))
+                    _, img_h = determine_scale_img.size
+                    _, pos_y = image_pos
+                _add_character_image(reminder_image, char_img_obj, image_size, pos=image_pos, scale_factor=scale)
 
         # Save the reminder image
         reminder_output_path = "reminder_tokens"
@@ -378,12 +391,14 @@ def create_character_token(character_data, font_paths, background_paths, output_
         return  # Skip meta object
     
 
-    # create_reminder_token(character_data, font_paths.get("description"), background_paths["reminder"], image_size)
+    create_reminder_token(character_data, font_paths.get("description"), background_paths["reminder"], image_size)
+
 
     # --- 1. Setup Canvas ---
     final_image, draw = _setup_canvas(character_data, background_paths, image_size)
 
     W, H = image_size
+    print(f'W:{W} H:{H}')
 
     _add_reminder_number(final_image, draw, character_data, font_paths.get("description"), image_size)
 
@@ -406,11 +421,13 @@ def create_character_token(character_data, font_paths, background_paths, output_
             aspect_ratio = img_w / img_h if img_h > 0 else 1
             resized_img_h = int((W * image_scale_factor) / aspect_ratio)
             image_top_y = int((H - resized_img_h) * IMAGE_Y)
+            image_bottom_y = image_top_y + resized_img_h
 
             # Check for overlap (with some padding)
             padding_px = 10
             print(f'{character_data.get("name")}: text bottom:{text_bottom} image top: {image_top_y-padding_px}')
-            if text_bottom < image_top_y - padding_px:
+            print(f'{character_data.get("name")}: image bottom: {image_bottom_y+padding_px} name top:{H * 0.77}')
+            if text_bottom < image_top_y - padding_px and image_bottom_y < H * 0.77:
                 break  # Found a good scale, exit loop
             else:
                 image_scale_factor *= 0.97  # Shrink scale by 3% and retry
@@ -452,5 +469,7 @@ if __name__ == '__main__':
         all_characters = json.load(f)
 
     for  i, character in enumerate(all_characters):
+        # if character.get("name") not in ['Shinkan']:
+        #     continue
         create_character_token(character, {"name": NAME_FONT_PATH, "description": DESCRIPTION_FONT_PATH}, BACKGROUND_PATHS, OUTPUT_FOLDER)
     
