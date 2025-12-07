@@ -6,11 +6,24 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 
 
+CANVAS_WIDTH = 1024
+CANVAS_HEIGHT = 1024
+MIDDLE_X = CANVAS_WIDTH // 2
+NAME_Y = CANVAS_HEIGHT * 0.77
 IMAGE_Y = 0.60
 
+def _calc_scale_by_max_height(img, max_height, max_scale=1.5, max_width=1024):
+    print(f'img size: {img.size}')
+    img_w, img_h = img.size
+    aspect_ratio = img_w / img_h
+    new_w = min(max_width, max_height * aspect_ratio)
+    print(f'max height: {max_height} new h: {img_h*max_scale}')
+    print(f'scale: {new_w / img_w}')
+    return min(max_scale, new_w / img_w)
+
+
 def _setup_canvas(character_data, background_paths, image_size):
-    """1. Sets up the canvas with the background and a circular mask."""
-    W, H = image_size
+    """1. Sets up the canvas with the background"""
 
     # --- 1a. Select and Load Background Image ---
     has_first_night = "firstNight" in character_data
@@ -57,24 +70,21 @@ def _add_reminder_number(final_image, draw, character_data, font_path, image_siz
         final_image.alpha_composite(text_layer)
 
 
-def _add_character_image(final_image, char_img, image_size, pos=None, scale_factor=1.0):
-    W, H = image_size
-    
+def _add_character_image(final_image, char_img, pos=None, scale_factor=1.0):
     # Resize and paste the character image
     img_w, img_h = char_img.size
     if img_w == 0 or img_h == 0:
         return # Avoid division by zero if image is empty after crop
-    aspect_ratio = img_w / img_h
-    new_h = int((W * scale_factor) / aspect_ratio)
-    char_img = char_img.resize((int(W * scale_factor), new_h), Image.Resampling.LANCZOS)
+    new_dimensions = (int(img_w * scale_factor), int(img_h * scale_factor))
+    char_img = char_img.resize(new_dimensions, Image.Resampling.LANCZOS)
 
     if pos:
         paste_x, paste_y = pos
         paste_x = int(paste_x - char_img.width // 2)
         paste_y = int(paste_y - char_img.height // 2)
     else:
-        paste_x = (W - char_img.width) // 2
-        paste_y = int((H - char_img.height) * IMAGE_Y)
+        paste_x = (CANVAS_WIDTH - char_img.width) // 2
+        paste_y = int((CANVAS_HEIGHT - char_img.height) * IMAGE_Y)
     final_image.paste(char_img, (paste_x, paste_y), char_img)
 
 
@@ -110,31 +120,33 @@ def _get_character_image(character_data):
     if os.path.exists(image_filename):
         print(f"Using local image for {character_data.get('name')}: {image_filename}")
         try:
-            return _crop_transparent_area(Image.open(image_filename).convert("RGBA"))
+            image = Image.open(image_filename).convert("RGBA")
         except Exception as e:
             print(f"Error processing local image for {character_data.get('name')}: {e}. Attempting to re-download.")
-
-    # Download image with retries
-    retries = 3
-    delay = 5  # seconds
-    for attempt in range(retries):
-        try:
-            response = requests.get(image_url, timeout=15)
-            response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
-            print(f"Successfully downloaded image for {character_data.get('name')} on attempt {attempt + 1}")
-            # Process and save image
+            image = None        
+    # If failed or not downloaded, download image with retries
+    if not image:
+        retries = 3
+        delay = 5  # seconds
+        for attempt in range(retries):
             try:
-                char_img_data = io.BytesIO(response.content)
-                char_img = Image.open(char_img_data).convert("RGBA")
-                char_img.save(image_filename)  # Save the downloaded image locally
-                return _crop_transparent_area(Image.open(image_filename).convert("RGBA"))
-            except Exception as e:
-                print(f"Error processing image for {character_data.get('name')} after download: {e}")
-                return None
-        except requests.exceptions.RequestException as e:
-            print(f"Attempt {attempt + 1} failed for {character_data.get('name')}: {e}. Retrying in {delay} seconds...")
-            time.sleep(delay)
-
+                response = requests.get(image_url, timeout=15)
+                response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
+                print(f"Successfully downloaded image for {character_data.get('name')} on attempt {attempt + 1}")
+                # Process and save image
+                try:
+                    char_img_data = io.BytesIO(response.content)
+                    image = Image.open(char_img_data).convert("RGBA")
+                    image.save(image_filename)  # Save the downloaded image locally
+                    # return _crop_transparent_area(Image.open(image_filename).convert("RGBA"))
+                except Exception as e:
+                    print(f"Error processing image for {character_data.get('name')} after download: {e}")
+                    return None
+            except requests.exceptions.RequestException as e:
+                print(f"Attempt {attempt + 1} failed for {character_data.get('name')}: {e}. Retrying in {delay} seconds...")
+                time.sleep(delay)
+    if image:
+        return _crop_transparent_area(image)
     print(f"Could not download image for {character_data.get('name')} after {retries} attempts.")
     return None
 
@@ -240,19 +252,32 @@ def _add_ability_text(draw, font, wrapped_text, image_size):
         align="center"
     )
 
-
-def create_reminder_token(character_data, font_path, background_path, image_size=(1024, 1024)):
+def _create_reminder_tokens(character_data, font_path, background_path, image_size=(1024, 1024)):
     reminders = character_data.get("reminders", [])
-    for index, reminder in enumerate(reminders):
-        # Load the background image for the reminder token
-        # Assuming background_path is a direct path to the reminder token background
-        reminder_image = Image.open(background_path).convert("RGBA")
+    if not reminders:
+        return
 
+    W, H = image_size
+    text_x = W // 2
+    text_y = (H // 5) * 4
+    image_pos = ( W//2, (H // 9) * 4 )
+
+    
+    char_img_obj = _get_character_image(character_data)
+    if not char_img_obj:
+        print(f'No image found for {character_data.get("name")}')
+        return
+    print(f'image pos: {image_pos}')
+    print(f'text_y {text_y}')
+    image_top_max = H * 0.35
+    scale = _calc_scale_by_max_height(char_img_obj, text_y - image_top_max)
+
+    for index, reminder in enumerate(reminders):
+        reminder_image = Image.open(background_path).convert("RGBA")
         reminder_draw = ImageDraw.Draw(reminder_image)
 
         if reminder:
-            W, H = image_size
-            font_size = 70
+            font_size = 100
             font = ImageFont.truetype(font_path, font_size)
             
             # Wrap text
@@ -271,9 +296,6 @@ def create_reminder_token(character_data, font_path, background_path, image_size
                 wrapped_lines.append(current_line)
             
             display_text = "\n".join(wrapped_lines)
-            
-            text_x = W // 2
-            text_y = (H // 4) * 3
             reminder_draw.multiline_text(
                 (text_x, text_y),
                 display_text,
@@ -282,25 +304,7 @@ def create_reminder_token(character_data, font_path, background_path, image_size
                 anchor="mm",
                 align="center"
             )
-            image_pos = (W//2, (H / 2) - (H * .05))
-            print(f'image pos: {image_pos}')
-            print(f'W:{W} H:{H}')
-            char_img_obj = _get_character_image(character_data)
-            if char_img_obj:
-                # Determine scale by image height
-                _, img_h = char_img_obj.size
-                _, pos_y = image_pos
-                padding_y = 200
-                scale_down = 0.97
-                scale = .525
-                determine_scale_img = char_img_obj.copy()
-                while img_h + pos_y > text_y - padding_y:
-                    scale *= scale_down
-                    determine_scale_img = determine_scale_img.resize((int(char_img_obj.width * scale) ,
-                                                       int(char_img_obj.height * scale)))
-                    _, img_h = determine_scale_img.size
-                    _, pos_y = image_pos
-                _add_character_image(reminder_image, char_img_obj, image_size, pos=image_pos, scale_factor=scale)
+            _add_character_image(reminder_image, char_img_obj, pos=image_pos, scale_factor=scale)
 
         # Save the reminder image
         reminder_output_path = "reminder_tokens"
@@ -346,14 +350,14 @@ def _add_character_name(draw, character_data, font_path, image_size):
             name_font_size = SMALL_FONT_SIZE
     print(f'name: {name}  font length: {name_font.getlength(name)} font size {name_font_size}')
     name_font = ImageFont.truetype(font_path, name_font_size)
-    name_x = W / 2
-    name_y = H * 0.82  # Position near the bottom
+    name_x = MIDDLE_X
+    name_y = NAME_Y # Position near the bottom
     draw.text(
         (name_x, name_y),
         name,
         fill="black",
         font=name_font,
-        anchor="mm"
+        anchor="ma"
     )
 
 
@@ -391,7 +395,8 @@ def create_character_token(character_data, font_paths, background_paths, output_
         return  # Skip meta object
     
 
-    create_reminder_token(character_data, font_paths.get("description"), background_paths["reminder"], image_size)
+    _create_reminder_tokens(character_data, font_paths.get("description"), background_paths["reminder"], image_size)
+
 
 
     # --- 1. Setup Canvas ---
@@ -405,45 +410,22 @@ def create_character_token(character_data, font_paths, background_paths, output_
     # --- 2. Get assets and calculate text layout ---
     char_img_obj = _get_character_image(character_data)
     font, wrapped_text, _ = _calculate_ability_text_layout(character_data, font_paths.get("description"), image_size)
+    
+    # --- 3. Add Character Image ---
+    text_bbox = draw.multiline_textbbox((W / 2, H * 0.10), wrapped_text, font=font, anchor="ma", align="center")
+    text_bottom = text_bbox[3]
+    padding = 40
+    max_height = NAME_Y - text_bottom - padding
+    image_scale_factor = _calc_scale_by_max_height(char_img_obj, max_height)
+    _add_character_image(final_image, char_img_obj, scale_factor=image_scale_factor)
 
-    # --- 3. Iteratively find best image scale to avoid text overlap ---
-    image_scale_factor = .5  # Start with default/max scale
-
-    if char_img_obj and wrapped_text:
-        # Get text bounding box to find its bottom edge
-        text_bbox = draw.multiline_textbbox((W / 2, H * 0.10), wrapped_text, font=font, anchor="ma", align="center")
-        text_bottom = text_bbox[3]
-
-        # Loop to shrink image until it doesn't overlap with the text
-        for _ in range(2000):
-            # Calculate image geometry for the current scale
-            img_w, img_h = char_img_obj.size
-            aspect_ratio = img_w / img_h if img_h > 0 else 1
-            resized_img_h = int((W * image_scale_factor) / aspect_ratio)
-            image_top_y = int((H - resized_img_h) * IMAGE_Y)
-            image_bottom_y = image_top_y + resized_img_h
-
-            # Check for overlap (with some padding)
-            padding_px = 10
-            print(f'{character_data.get("name")}: text bottom:{text_bottom} image top: {image_top_y-padding_px}')
-            print(f'{character_data.get("name")}: image bottom: {image_bottom_y+padding_px} name top:{H * 0.77}')
-            if text_bottom < image_top_y - padding_px and image_bottom_y < H * 0.77:
-                break  # Found a good scale, exit loop
-            else:
-                image_scale_factor *= 0.97  # Shrink scale by 3% and retry
-        print(f"INFO: {character_data.get('name')} Final image scale is {image_scale_factor:.2f}")
-
-    # --- 4. Add Character Image ---
-    if char_img_obj:
-        _add_character_image(final_image, char_img_obj, image_size, scale_factor=image_scale_factor)
-
-    # --- 5. Add Ability Text ---
+    # --- 4. Add Ability Text ---
     _add_ability_text(draw, font, wrapped_text, image_size)
 
-    # --- 6. Add Character Name ---
+    # --- 5. Add Character Name ---
     _add_character_name(draw, character_data, font_paths.get("name"), image_size)
 
-    # --- 7. Finalize and Save ---
+    # --- 6. Finalize and Save ---
     _finalize_and_save(final_image, character_data, output_path)
 
 
@@ -469,7 +451,7 @@ if __name__ == '__main__':
         all_characters = json.load(f)
 
     for  i, character in enumerate(all_characters):
-        # if character.get("name") not in ['Shinkan']:
-        #     continue
+        if character.get("name") not in ['Lady Lace', 'Hypnox']:
+            pass
         create_character_token(character, {"name": NAME_FONT_PATH, "description": DESCRIPTION_FONT_PATH}, BACKGROUND_PATHS, OUTPUT_FOLDER)
     

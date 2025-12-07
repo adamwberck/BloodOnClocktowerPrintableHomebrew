@@ -111,7 +111,6 @@ def main():
         output_filename = os.path.join(OUTPUT_DIR, f'print_sheet_{sheet_num}.png')
         current_sheet.save(output_filename)
         print(f"Saved {output_filename}")
-
     print(f"\nPrint sheet generation complete. Sheets are in the '{OUTPUT_DIR}' directory.")
 
 
