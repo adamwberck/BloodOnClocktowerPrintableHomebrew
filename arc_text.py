@@ -18,29 +18,35 @@ def draw_text_on_arc(image, center_xy, radius, start_angle_deg, text_angle_deg, 
         font (PIL.ImageFont.FreeTypeFont): The font to use for the text.
         fill (tuple or str): The color of the text.
     """
-    text = text.upper()
     if not text:
         return
+    text = text.strip()
+
+    draw_text = ImageDraw.Draw(image)
+    draw_text.text(center_xy, text, font=font, fill=fill, anchor='mm')
 
     center_x, center_y = center_xy
-    num_chars = len(text)
+    def calc_char_width(char, next_char=None):
+        if next_char is None:
+            print(f'char: {char} next_char: {next_char}')
+            return font.getlength(char)
+        return font.getlength(f'{char}{next_char}') - font.getlength(next_char)
+    
 
-    # Calculate the angular step between the center of each character
-    if num_chars > 1:
-        angle_step = text_angle_deg / (num_chars - 1)
-    else:
-        angle_step = 0  # A single character is placed in the middle of the arc
+    char_widths = [calc_char_width(text[i], text[i+1])
+                   if i < len(text)-1 else calc_char_width(text[i])
+                   for i in range(len(text))]
+    assert sum(char_widths) == font.getlength(text)
+    char_angles = [ char_width / radius for char_width in char_widths]
+    # char_angles = [math.acos(
+    #                 (2 * math.pow(better_radius,2) - math.pow(char_width,2)) /
+    #                 (2 * math.pow(better_radius,2))) for char_width in char_widths]
+    print([f"{char}: {char_widths[i]}, {char_angles[i]}" for i, char in enumerate(text)])
 
+    current_angle = math.radians(start_angle_deg)
     for i, char in enumerate(text):
-        # Determine the angle for the current character
-        if num_chars > 1:
-            char_angle_deg = start_angle_deg + (i * angle_step)
-        else:
-            # Center the single character within the provided text_angle_deg
-            char_angle_deg = start_angle_deg + text_angle_deg / 2
-
         # --- 1. Calculate character's center position on the arc ---
-        char_angle_rad = math.radians(char_angle_deg)
+        char_angle_rad = current_angle
         char_x = center_x + radius * math.cos(char_angle_rad)
         char_y = center_y + radius * math.sin(char_angle_rad)
 
@@ -60,11 +66,9 @@ def draw_text_on_arc(image, center_xy, radius, start_angle_deg, text_angle_deg, 
 
         # --- 3. Rotate the character to be tangent to the arc ---
         # The rotation angle makes the character's "up" direction point away from the center
-        if text_angle_deg > 0:
-            rotation_angle = 270 - char_angle_deg
-        else:
-            rotation_angle = 90 - char_angle_deg
+        rotation_angle = 90 - math.degrees(current_angle)
         rotated_char_img = temp_img.rotate(rotation_angle, expand=True, resample=Image.Resampling.BICUBIC)
+
 
         # --- 4. Paste the rotated character onto the main image ---
         # Calculate top-left corner for pasting to center the character on its arc position
@@ -72,12 +76,24 @@ def draw_text_on_arc(image, center_xy, radius, start_angle_deg, text_angle_deg, 
         paste_y = int(char_y - rotated_char_img.height / 2)
 
         image.paste(rotated_char_img, (paste_x, paste_y), rotated_char_img)
+        draw = ImageDraw.Draw(image)
+        half_w = rotated_char_img.width / 2
+        draw.line((paste_x - half_w, paste_y, paste_x + half_w, paste_y))
+
+        # --- 5. Increment the angle by the width
+        char_width = char_widths[i]
+        angle_step = char_angles[i]
+        current_angle -= angle_step
+
+
 
 
 def save_arc_text_example(filename="arc_text_example.png", text="EXAMPLE TEXT ON ARC"):
     """
     Creates and saves an image to demonstrate the draw_text_on_arc function.
     """
+    text = text.upper()
+
     # --- Setup Canvas ---
     width, height = 1024, 1024
     image = Image.new('RGBA', (width, height), 'white')
@@ -109,10 +125,9 @@ def save_arc_text_example(filename="arc_text_example.png", text="EXAMPLE TEXT ON
     )
 
     # --- Draw Text on Top Arc ---
-    magic_ratio_length_to_width = 4.9
     text_width = draw.textlength(text, font=font)
-    text_angle_deg = -text_width // magic_ratio_length_to_width
-    start_angle_deg = 90 + abs(text_angle_deg//2)
+    text_angle_deg = math.degrees( text_width / radius)
+    start_angle_deg = 120 + abs(text_angle_deg//2)
     draw_text_on_arc(
         image=image,
         center_xy=center,
@@ -130,4 +145,4 @@ def save_arc_text_example(filename="arc_text_example.png", text="EXAMPLE TEXT ON
 
 
 if __name__ == '__main__':
-    save_arc_text_example(text="doppelganger")
+    save_arc_text_example(text="dpooel ganger")
