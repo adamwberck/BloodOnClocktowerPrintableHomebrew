@@ -22,42 +22,41 @@ def draw_text_on_arc(image, center_xy, radius, start_angle_deg, text_angle_deg, 
         return
     text = text.strip()
 
-    draw_text = ImageDraw.Draw(image)
-    draw_text.text(center_xy, text, font=font, fill=fill, anchor='mm')
-
+    draw = ImageDraw.Draw(image)
     center_x, center_y = center_xy
-    def calc_char_width(char, next_char=None):
-        if next_char is None:
-            print(f'char: {char} next_char: {next_char}')
-            return font.getlength(char)
-        return font.getlength(f'{char}{next_char}') - font.getlength(next_char)
-    
 
-    char_widths = [calc_char_width(text[i], text[i+1])
-                   if i < len(text)-1 else calc_char_width(text[i])
-                   for i in range(len(text))]
-    assert sum(char_widths) == font.getlength(text)
-    char_angles = [ char_width / radius for char_width in char_widths]
-    # char_angles = [math.acos(
-    #                 (2 * math.pow(better_radius,2) - math.pow(char_width,2)) /
-    #                 (2 * math.pow(better_radius,2))) for char_width in char_widths]
-    print([f"{char}: {char_widths[i]}, {char_angles[i]}" for i, char in enumerate(text)])
+    # The start_angle_deg is the angle where the text should begin.
+    # The caller is responsible for calculating this to center the text block if desired.
+    start_angle_rad = math.radians(start_angle_deg)
 
-    current_angle = math.radians(start_angle_deg)
     for i, char in enumerate(text):
         # --- 1. Calculate character's center position on the arc ---
-        char_angle_rad = current_angle
+        # Use textlength to get kerning-aware positioning.
+        # This measures the width of the string up to the current character.
+        width_before = draw.textlength(text[:i], font=font)
+        # This is the advance width of the character itself.
+        char_advance = draw.textlength(text[:i+1], font=font) - width_before
+
+        # The angle for the center of this character.
+        # We add half the character's advance to the width before it.
+        angle_offset_rad = (width_before + char_advance / 2) / radius
+        char_angle_rad = start_angle_rad - angle_offset_rad
+
         char_x = center_x + radius * math.cos(char_angle_rad)
         char_y = center_y + radius * math.sin(char_angle_rad)
 
         # --- 2. Create a temporary image for the single rotated character ---
-        # Get character size
-        char_bbox = font.getbbox(char)
-        char_width = char_bbox[2] - char_bbox[0]
-        char_height = char_bbox[3] - char_bbox[1]
+        # Get character glyph size from its bounding box.
+        left, top, right, bottom = font.getbbox(char)
+        char_width = right - left
+        char_height = bottom - top
 
         # Create a transparent canvas for the character, large enough for rotation
-        temp_size = int(math.sqrt(char_width**2 + char_height**2) * 1.2)
+        # A larger multiplier provides more space to avoid clipping during rotation.
+        temp_size = int(math.sqrt(char_width**2 + char_height**2) * 1.4)
+        if temp_size == 0:
+            continue  # Skip spaces or zero-width characters
+
         temp_img = Image.new('RGBA', (temp_size, temp_size), (0, 0, 0, 0))
         temp_draw = ImageDraw.Draw(temp_img)
 
@@ -65,28 +64,14 @@ def draw_text_on_arc(image, center_xy, radius, start_angle_deg, text_angle_deg, 
         temp_draw.text((temp_size / 2, temp_size / 2), char, font=font, fill=fill, anchor='mm')
 
         # --- 3. Rotate the character to be tangent to the arc ---
-        # The rotation angle makes the character's "up" direction point away from the center
-        rotation_angle = 90 - math.degrees(current_angle)
+        rotation_angle = -math.degrees(char_angle_rad) + 90
         rotated_char_img = temp_img.rotate(rotation_angle, expand=True, resample=Image.Resampling.BICUBIC)
-
 
         # --- 4. Paste the rotated character onto the main image ---
         # Calculate top-left corner for pasting to center the character on its arc position
         paste_x = int(char_x - rotated_char_img.width / 2)
         paste_y = int(char_y - rotated_char_img.height / 2)
-
         image.paste(rotated_char_img, (paste_x, paste_y), rotated_char_img)
-        draw = ImageDraw.Draw(image)
-        half_w = rotated_char_img.width / 2
-        draw.line((paste_x - half_w, paste_y, paste_x + half_w, paste_y))
-
-        # --- 5. Increment the angle by the width
-        char_width = char_widths[i]
-        angle_step = char_angles[i]
-        current_angle -= angle_step
-
-
-
 
 def save_arc_text_example(filename="arc_text_example.png", text="EXAMPLE TEXT ON ARC"):
     """
@@ -127,7 +112,9 @@ def save_arc_text_example(filename="arc_text_example.png", text="EXAMPLE TEXT ON
     # --- Draw Text on Top Arc ---
     text_width = draw.textlength(text, font=font)
     text_angle_deg = math.degrees( text_width / radius)
-    start_angle_deg = 120 + abs(text_angle_deg//2)
+    # For drawing on the top arc, start angle should be calculated to center the text.
+    # 90 degrees is the top of the circle. We start from the left of the top.
+    start_angle_deg = 90 + text_angle_deg / 2
     draw_text_on_arc(
         image=image,
         center_xy=center,
