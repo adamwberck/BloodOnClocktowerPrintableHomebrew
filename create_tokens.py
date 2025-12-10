@@ -3,6 +3,7 @@ import time
 import io
 import os
 import requests
+import math
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -326,7 +327,7 @@ def _create_reminder_tokens(character_data, font_path, background_path, image_si
     
 
 
-def _add_character_name(draw, character_data, font_path, image_size):
+def _add_character_name(image, character_data, font_path, image_size):
     """4. Adds the character's name to the bottom of the token."""
     name = character_data.get("name", "").upper()
     if not name:
@@ -342,23 +343,31 @@ def _add_character_name(draw, character_data, font_path, image_size):
     max_name_width = W * 0.60
 
     name_font_length = name_font.getlength(name)
-    if name_font_length > max_name_width:
-        name_font_size = MED_FONT_SIZE
-        name_font = ImageFont.truetype(font_path, name_font_size)
-        name_font_length = name_font.getlength(name)
-        if name_font_length > max_name_width:
-            name_font_size = SMALL_FONT_SIZE
+    # if name_font_length > max_name_width:
+    #     name_font_size = MED_FONT_SIZE
+    #     name_font = ImageFont.truetype(font_path, name_font_size)
+    #     name_font_length = name_font.getlength(name)
+    #     if name_font_length > max_name_width:
+    #         name_font_size = SMALL_FONT_SIZE
     print(f'name: {name}  font length: {name_font.getlength(name)} font size {name_font_size}')
     name_font = ImageFont.truetype(font_path, name_font_size)
-    name_x = MIDDLE_X
-    name_y = NAME_Y # Position near the bottom
-    draw.text(
-        (name_x, name_y),
-        name,
-        fill="black",
-        font=name_font,
-        anchor="ma"
+    radius = int(W * .40)
+    draw = ImageDraw.Draw(image)
+    font = name_font
+    text_width = draw.textlength(name, name_font)
+    text_angle_deg = math.degrees( text_width / radius)
+    start_angle_deg = 90 + text_angle_deg / 2
+    from arc_text import draw_text_on_arc
+    draw_text_on_arc(
+        image=image,
+        center_xy=(W // 2, H //2),
+        radius=radius,
+        start_angle_deg=start_angle_deg,
+        text=name,
+        font=font,
+        fill='black'
     )
+
 
 
 def _finalize_and_save(final_image, character_data, output_path):
@@ -423,7 +432,7 @@ def create_character_token(character_data, font_paths, background_paths, output_
     _add_ability_text(draw, font, wrapped_text, image_size)
 
     # --- 5. Add Character Name ---
-    _add_character_name(draw, character_data, font_paths.get("name"), image_size)
+    _add_character_name(final_image, character_data, font_paths.get("name"), image_size)
 
     # --- 6. Finalize and Save ---
     _finalize_and_save(final_image, character_data, output_path)

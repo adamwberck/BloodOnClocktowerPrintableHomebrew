@@ -3,7 +3,7 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 
 
-def draw_text_on_arc(image, center_xy, radius, start_angle_deg, text_angle_deg, text, font, fill):
+def draw_text_on_arc(image, center_xy, radius, start_angle_deg, text, font, fill):
     """
     Draws text along a circular arc, with each letter individually rotated.
 
@@ -13,7 +13,6 @@ def draw_text_on_arc(image, center_xy, radius, start_angle_deg, text_angle_deg, 
         radius (int): The radius of the arc.
         start_angle_deg (float): The starting angle of the text on the arc in degrees.
                                  0 is to the right (3 o'clock), -90 is top (12 o'clock).
-        text_angle_deg (float): The total angular distance the text should span.
         text (str): The text to display (will be converted to uppercase).
         font (PIL.ImageFont.FreeTypeFont): The font to use for the text.
         fill (tuple or str): The color of the text.
@@ -120,7 +119,6 @@ def save_arc_text_example(filename="arc_text_example.png", text="EXAMPLE TEXT ON
         center_xy=center,
         radius=radius,
         start_angle_deg=start_angle_deg,
-        text_angle_deg=text_angle_deg,
         text=text,
         font=font,
         fill='black'
