@@ -5,10 +5,13 @@ from PIL import Image
 DPI = 300  # Dots Per Inch
 PAPER_WIDTH_INCHES = 11
 PAPER_HEIGHT_INCHES = 8.5
-MARGIN_INCHES = 0.7
+MARGIN_INCHES = 0.75
 
 CHARACTER_TOKEN_DIAMETER_INCHES = 1.75
 REMINDER_TOKEN_DIAMETER_INCHES = 1
+
+PADDING = 1/16
+PADDING_PX = int(PADDING * DPI)
 
 CHARACTER_TOKEN_DIR = 'character_tokens'
 REMINDER_TOKEN_DIR = 'reminder_tokens'
@@ -57,13 +60,14 @@ def main():
     char_paths = collect_image_paths(CHARACTER_TOKEN_DIR)
     reminder_paths = collect_image_paths(REMINDER_TOKEN_DIR)
 
-    tokens_to_print = []
+    character_tokens = []
+    reminder_tokens = []
     for path in char_paths:
-        tokens_to_print.append({'path': path, 'size': CHAR_TOKEN_SIZE_PX})
+        character_tokens.append({'path': path, 'size': CHAR_TOKEN_SIZE_PX})
     for path in reminder_paths:
-        tokens_to_print.append({'path': path, 'size': REMINDER_TOKEN_SIZE_PX})
+        reminder_tokens.append({'path': path, 'size': REMINDER_TOKEN_SIZE_PX})
 
-    if not tokens_to_print:
+    if not character_tokens and not character_tokens:
         print("No token images found. Please run create_tokens.py first.")
         return
 
@@ -76,8 +80,13 @@ def main():
     y_pos = MARGIN_PX
     row_height = 0
     sheet_has_content = False
-
-    for token_info in tokens_to_print:
+    character_size = character_tokens[0]['size']
+    while character_tokens and reminder_tokens:
+        use_reminder = lambda x, y : x + character_size > PRINTABLE_WIDTH_PX or y + character_size > PRINTABLE_HEIGHT_PX
+        if not character_tokens or use_reminder(x_pos, y_pos):
+            token_info = reminder_tokens.pop()
+        else:
+            token_info = character_tokens.pop()
         path = token_info['path']
         size = token_info['size']
 
@@ -97,15 +106,16 @@ def main():
 
         try:
             with Image.open(path) as token_img:
-                resized_img = token_img.resize((size, size), Image.Resampling.LANCZOS)
+                cropped_token = token_img.crop(token_img.getbbox())
+                resized_img = cropped_token.resize((size, size), Image.Resampling.LANCZOS)
                 current_sheet.paste(resized_img, (x_pos, y_pos), resized_img)
                 sheet_has_content = True
         except Exception as e:
             print(f"Error processing image {path}: {e}")
             continue
 
-        x_pos += size
-        row_height = max(row_height, size)
+        x_pos += size + PADDING_PX
+        row_height = max(row_height, size + PADDING_PX)
 
     if sheet_has_content:
         output_filename = os.path.join(OUTPUT_DIR, f'print_sheet_{sheet_num}.png')

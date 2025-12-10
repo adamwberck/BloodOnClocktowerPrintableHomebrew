@@ -48,11 +48,11 @@ def draw_text_on_arc(image, center_xy, radius, start_angle_deg, text, font, fill
         # Get character glyph size from its bounding box.
         left, top, right, bottom = font.getbbox(char)
         char_width = right - left
-        char_height = bottom - top
+        char_height = max(40, bottom - top)
 
         # Create a transparent canvas for the character, large enough for rotation
         # A larger multiplier provides more space to avoid clipping during rotation.
-        temp_size = int(math.sqrt(char_width**2 + char_height**2) * 1.4)
+        temp_size = int(math.sqrt(char_width**2 + char_height**2) * 1.5)
         if temp_size == 0:
             continue  # Skip spaces or zero-width characters
 
@@ -61,6 +61,9 @@ def draw_text_on_arc(image, center_xy, radius, start_angle_deg, text, font, fill
 
         # Draw the character in the center of the temporary image
         temp_draw.text((temp_size / 2, temp_size / 2), char, font=font, fill=fill, anchor='mm')
+        
+        if char == '.':
+            temp_img.save('temp.png')
 
         # --- 3. Rotate the character to be tangent to the arc ---
         rotation_angle = -math.degrees(char_angle_rad) + 90
