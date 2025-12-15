@@ -401,7 +401,7 @@ def create_character_token(character_data, font_paths, background_paths, output_
     W, H = image_size
     print(f'W:{W} H:{H}')
 
-    _add_reminder_number(final_image, draw, character_data, font_paths.get("description"), image_size)
+    _add_reminder_number(final_image, draw, character_data, font_paths.get("reminder_count"), image_size)
 
     # --- 2. Get assets and calculate text layout ---
     char_img_obj = _get_character_image(character_data)
