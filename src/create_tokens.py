@@ -3,6 +3,8 @@ import time
 import io
 import os
 import requests
+import math
+from arc_text import draw_text_on_arc
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -274,36 +276,23 @@ def _create_reminder_tokens(character_data, font_path, background_path, image_si
 
     for index, reminder in enumerate(reminders):
         reminder_image = Image.open(background_path).convert("RGBA")
-        reminder_draw = ImageDraw.Draw(reminder_image)
 
         if reminder:
-            font_size = 100
+            font_size = 140
             font = ImageFont.truetype(font_path, font_size)
-            
-            # Wrap text
-            words = reminder.split()
-            wrapped_lines = []
-            current_line = ""
-            max_width = W * 0.8 # 80% of image width
-            for word in words:
-                test_line = f"{current_line} {word}" if current_line else word
-                if font.getlength(test_line) <= max_width:
-                    current_line = test_line
-                else:
-                    wrapped_lines.append(current_line)
-                    current_line = word
-            if current_line:
-                wrapped_lines.append(current_line)
-            
-            display_text = "\n".join(wrapped_lines)
-            reminder_draw.multiline_text(
-                (text_x, text_y),
-                display_text,
-                fill="white",
+            radius = int(W * 0.38)
+            draw = ImageDraw.Draw(reminder_image)
+            text_length = draw.textlength(reminder, font=font)
+            text_angle_deg = math.degrees( text_length / radius)
+            start_angle_deg = int(90 + text_angle_deg / 2)
+            draw_text_on_arc(
+                image=reminder_image,
+                center_xy=(W // 2, H //2),
+                radius=radius,
+                start_angle_deg=start_angle_deg,
+                text=reminder,
                 font=font,
-                anchor="mm",
-                align="center"
-            )
+                fill='white')
             _add_character_image(reminder_image, char_img_obj, pos=image_pos, scale_factor=scale)
 
         # Save the reminder image
@@ -326,7 +315,7 @@ def _create_reminder_tokens(character_data, font_path, background_path, image_si
     
 
 
-def _add_character_name(draw, character_data, font_path, image_size):
+def _add_character_name(image, character_data, font_path, image_size):
     """4. Adds the character's name to the bottom of the token."""
     name = character_data.get("name", "").upper()
     if not name:
@@ -342,23 +331,30 @@ def _add_character_name(draw, character_data, font_path, image_size):
     max_name_width = W * 0.60
 
     name_font_length = name_font.getlength(name)
-    if name_font_length > max_name_width:
-        name_font_size = MED_FONT_SIZE
-        name_font = ImageFont.truetype(font_path, name_font_size)
-        name_font_length = name_font.getlength(name)
-        if name_font_length > max_name_width:
-            name_font_size = SMALL_FONT_SIZE
+    # if name_font_length > max_name_width:
+    #     name_font_size = MED_FONT_SIZE
+    #     name_font = ImageFont.truetype(font_path, name_font_size)
+    #     name_font_length = name_font.getlength(name)
+    #     if name_font_length > max_name_width:
+    #         name_font_size = SMALL_FONT_SIZE
     print(f'name: {name}  font length: {name_font.getlength(name)} font size {name_font_size}')
     name_font = ImageFont.truetype(font_path, name_font_size)
-    name_x = MIDDLE_X
-    name_y = NAME_Y # Position near the bottom
-    draw.text(
-        (name_x, name_y),
-        name,
-        fill="black",
-        font=name_font,
-        anchor="ma"
+    radius = int(W * .40)
+    draw = ImageDraw.Draw(image)
+    font = name_font
+    text_width = draw.textlength(name, name_font)
+    text_angle_deg = math.degrees( text_width / radius)
+    start_angle_deg = 90 + text_angle_deg / 2
+    draw_text_on_arc(
+        image=image,
+        center_xy=(W // 2, H //2),
+        radius=radius,
+        start_angle_deg=start_angle_deg,
+        text=name,
+        font=font,
+        fill='black'
     )
+
 
 
 def _finalize_and_save(final_image, character_data, output_path):
@@ -395,7 +391,7 @@ def create_character_token(character_data, font_paths, background_paths, output_
         return  # Skip meta object
     
 
-    _create_reminder_tokens(character_data, font_paths.get("description"), background_paths["reminder"], image_size)
+    _create_reminder_tokens(character_data, font_paths.get("reminder"), background_paths["reminder"], image_size)
 
 
 
@@ -423,7 +419,7 @@ def create_character_token(character_data, font_paths, background_paths, output_
     _add_ability_text(draw, font, wrapped_text, image_size)
 
     # --- 5. Add Character Name ---
-    _add_character_name(draw, character_data, font_paths.get("name"), image_size)
+    _add_character_name(final_image, character_data, font_paths.get("name"), image_size)
 
     # --- 6. Finalize and Save ---
     _finalize_and_save(final_image, character_data, output_path)
@@ -431,9 +427,10 @@ def create_character_token(character_data, font_paths, background_paths, output_
 
 if __name__ == '__main__':
     # Make sure these paths are correct
-    JSON_FILE_PATH = 'menagerie_fixed.json'
-    NAME_FONT_PATH = 'dum1.ttf'
-    DESCRIPTION_FONT_PATH = 'trade-gothic-lt.ttf'
+    JSON_FILE_PATH = 'assets/json/menagerie_fixed.json'
+    NAME_FONT_PATH = 'assets/fonts/dum1.ttf'
+    DESCRIPTION_FONT_PATH = 'assets/fonts/trade-gothic-lt.ttf'
+    REMINDER_FONT_PATH = 'assets/fonts/trade-gothic-lt-std.otf'
     BACKGROUND_PATHS = {
         "both": "assets/backgrounds_light/left right token.png",
         "first": "assets/backgrounds_light/left token.png",
@@ -442,6 +439,12 @@ if __name__ == '__main__':
         "reminder": "assets/backgrounds_light/reminder.png"
     }
     OUTPUT_FOLDER = 'character_tokens'
+    fonts = {
+        "name": "assets/fonts/dum1.ttf",
+        "description": "assets/fonts/trade-gothic-lt.ttf",
+        "reminder": "assets/fonts/trade-gothic-lt-std.otf",
+        "reminder_count":  "assets/fonts/trade-gothic-lt-std-bold-condensed.otf"
+    }
 
     import os
     if not os.path.exists(OUTPUT_FOLDER):
@@ -451,7 +454,7 @@ if __name__ == '__main__':
         all_characters = json.load(f)
 
     for  i, character in enumerate(all_characters):
-        if character.get("name") not in ['Lady Lace', 'Hypnox']:
+        if character.get("name") not in ['Mime']:
             pass
-        create_character_token(character, {"name": NAME_FONT_PATH, "description": DESCRIPTION_FONT_PATH}, BACKGROUND_PATHS, OUTPUT_FOLDER)
+        create_character_token(character, fonts, BACKGROUND_PATHS, OUTPUT_FOLDER)
     
