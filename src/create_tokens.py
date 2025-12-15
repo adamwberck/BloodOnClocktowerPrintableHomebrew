@@ -72,7 +72,7 @@ def _add_reminder_number(final_image, draw, character_data, font_path, image_siz
         final_image.alpha_composite(text_layer)
 
 
-def _add_character_image(final_image, char_img, pos=None, scale_factor=1.0):
+def _paste_character_image(final_image, char_img, pos=None, scale_factor=1.0):
     # Resize and paste the character image
     img_w, img_h = char_img.size
     if img_w == 0 or img_h == 0:
@@ -293,7 +293,7 @@ def _create_reminder_tokens(character_data, font_path, background_path, image_si
                 text=reminder,
                 font=font,
                 fill='white')
-            _add_character_image(reminder_image, char_img_obj, pos=image_pos, scale_factor=scale)
+            _paste_character_image(reminder_image, char_img_obj, pos=image_pos, scale_factor=scale)
 
         # Save the reminder image
         reminder_output_path = "reminder_tokens"
@@ -314,12 +314,42 @@ def _create_reminder_tokens(character_data, font_path, background_path, image_si
         print(f"Created reminder token for {reminder} at {output_filename}")
     
 
+def _get_arc_text_top_y_in_slice(name_arc_img, center_x, width):
+    """
+    Finds the highest non-transparent pixel y-coordinate within a given width centered at center_x.
+    This is used to nestle the character image into the curve of the name text.
+    """
+    if not name_arc_img:
+        return None
+
+    img_w, img_h = name_arc_img.size
+    x_start = max(0, int(center_x - width / 2))
+    x_end = min(img_w, int(center_x + width / 2))
+
+    min_y = img_h
+
+    bbox = name_arc_img.getbbox()
+    if not bbox:
+        return None  # Fully transparent image
+
+    pixels = name_arc_img.load()
+    y_scan_start = bbox[1]
+    y_scan_end = bbox[3]
+
+    for x in range(x_start, x_end):
+        for y in range(y_scan_start, y_scan_end):
+            if pixels[x, y][3] > 0:  # Check alpha channel
+                if y < min_y:
+                    min_y = y
+                break  # Found topmost pixel for this column, move to next x
+    
+    return min_y if min_y != img_h else None
 
 def _add_character_name(image, character_data, font_path, image_size):
     """4. Adds the character's name to the bottom of the token."""
     name = character_data.get("name", "").upper()
     if not name:
-        return
+        return None
     W, H = image_size
     LARGE_FONT_SIZE = 120
     MED_FONT_SIZE = 90
@@ -345,7 +375,7 @@ def _add_character_name(image, character_data, font_path, image_size):
     text_width = draw.textlength(name, name_font)
     text_angle_deg = math.degrees( text_width / radius)
     start_angle_deg = 90 + text_angle_deg / 2
-    draw_text_on_arc(
+    arc_text = draw_text_on_arc(
         image=image,
         center_xy=(W // 2, H //2),
         radius=radius,
@@ -354,7 +384,7 @@ def _add_character_name(image, character_data, font_path, image_size):
         font=font,
         fill='black'
     )
-
+    return arc_text
 
 
 def _finalize_and_save(final_image, character_data, output_path):
@@ -407,19 +437,68 @@ def create_character_token(character_data, font_paths, background_paths, output_
     char_img_obj = _get_character_image(character_data)
     font, wrapped_text, _ = _calculate_ability_text_layout(character_data, font_paths.get("description"), image_size)
     
-    # --- 3. Add Character Image ---
-    text_bbox = draw.multiline_textbbox((W / 2, H * 0.10), wrapped_text, font=font, anchor="ma", align="center")
-    text_bottom = text_bbox[3]
-    padding = 40
-    max_height = NAME_Y - text_bottom - padding
-    image_scale_factor = _calc_scale_by_max_height(char_img_obj, max_height)
-    _add_character_image(final_image, char_img_obj, scale_factor=image_scale_factor)
-
-    # --- 4. Add Ability Text ---
+    # --- 3. Add Ability Text ---
     _add_ability_text(draw, font, wrapped_text, image_size)
 
-    # --- 5. Add Character Name ---
-    _add_character_name(final_image, character_data, font_paths.get("name"), image_size)
+    # --- 4. Add Character Name ---
+    name_arc_img = _add_character_name(final_image, character_data, font_paths.get("name"), image_size)
+
+    # --- 5. Add Character Image ---
+    if char_img_obj:
+        if wrapped_text:
+            text_bbox = draw.multiline_textbbox((W / 2, H * 0.10), wrapped_text, font=font, anchor="ma", align="center")
+            text_bottom = text_bbox[3]
+        else:
+            text_bottom = H * 0.10
+
+        padding = 10
+        top_limit = text_bottom + padding
+
+        img_w_orig, img_h_orig = char_img_obj.size
+        if img_h_orig == 0:
+            return
+        aspect_ratio = img_w_orig / img_h_orig
+
+        # --- Binary search for the optimal scale factor ---
+        low_s, best_s = 0.0, 0.0
+        high_s = min((W * 0.9) / img_w_orig if img_w_orig > 0 else 1.5, (NAME_Y - top_limit) / img_h_orig if img_h_orig > 0 else 1.5, 1.5)
+
+        for _ in range(15):  # 15 iterations for precision
+            s = (low_s + high_s) / 2
+            w_new = s * img_w_orig
+
+            bottom_limit = _get_arc_text_top_y_in_slice(name_arc_img, W / 2, w_new)
+            if bottom_limit is None:
+                bottom_limit = NAME_Y  # Fallback
+
+            available_height = bottom_limit - top_limit - padding
+
+            if s * img_h_orig <= available_height:
+                best_s = s
+                low_s = s
+            else:
+                high_s = s
+
+        if best_s > 0:
+            final_w = best_s * img_w_orig
+            final_bottom_limit = _get_arc_text_top_y_in_slice(name_arc_img, W / 2, final_w)
+            if final_bottom_limit is None:
+                print(f'{character_data.get("name")}: could not find bottom limit in final check, using NAME_Y')
+                final_bottom_limit = NAME_Y
+
+            available_height = final_bottom_limit - top_limit
+            center_y = top_limit + int(available_height * 0.5)
+            pos = (W // 2, center_y)
+            _paste_character_image(final_image, char_img_obj, pos=pos, scale_factor=best_s)
+        else: # Fallback to old method if search fails
+            print(f'{character_data.get("name")}: scale search failed, using fallback method')
+            bottom_limit = (name_arc_img.getbbox()[1] - padding) if name_arc_img and name_arc_img.getbbox() else (NAME_Y - padding)
+            available_height = bottom_limit - top_limit
+            if available_height > 0:
+                image_scale_factor = _calc_scale_by_max_height(char_img_obj, available_height)
+                center_y = top_limit + (available_height / 2)
+                pos = (W // 2, center_y)
+                _paste_character_image(final_image, char_img_obj, pos=pos, scale_factor=image_scale_factor)
 
     # --- 6. Finalize and Save ---
     _finalize_and_save(final_image, character_data, output_path)
@@ -454,7 +533,8 @@ if __name__ == '__main__':
         all_characters = json.load(f)
 
     for  i, character in enumerate(all_characters):
-        if character.get("name") not in ['Mime']:
+        print(f'Processing {i+1}/{len(all_characters)}: {character.get("name")}')
+        if character.get("name") not in ['Doppelganger']:
             pass
         create_character_token(character, fonts, BACKGROUND_PATHS, OUTPUT_FOLDER)
     

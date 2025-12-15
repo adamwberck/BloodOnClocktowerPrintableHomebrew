@@ -21,7 +21,8 @@ def draw_text_on_arc(image, center_xy, radius, start_angle_deg, text, font, fill
         return
     text = text.strip()
 
-    draw = ImageDraw.Draw(image)
+    transparent_image = Image.new('RGBA', image.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(transparent_image)
     center_x, center_y = center_xy
 
     # The start_angle_deg is the angle where the text should begin.
@@ -73,7 +74,10 @@ def draw_text_on_arc(image, center_xy, radius, start_angle_deg, text, font, fill
         # Calculate top-left corner for pasting to center the character on its arc position
         paste_x = int(char_x - rotated_char_img.width / 2)
         paste_y = int(char_y - rotated_char_img.height / 2)
-        image.paste(rotated_char_img, (paste_x, paste_y), rotated_char_img)
+        transparent_image.paste(rotated_char_img, (paste_x, paste_y), rotated_char_img)
+    # Composite the transparent image with the drawn text onto the original image
+    image.alpha_composite(transparent_image)
+    return transparent_image
 
 def save_arc_text_example(filename="arc_text_example.png", text="EXAMPLE TEXT ON ARC"):
     """
