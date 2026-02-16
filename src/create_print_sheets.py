@@ -6,6 +6,7 @@ DPI = 300  # Dots Per Inch
 PAPER_WIDTH_INCHES = 11
 PAPER_HEIGHT_INCHES = 8.5
 MARGIN_INCHES = 0.75
+TOP_ROW_MARGIN_INCHES = 1
 
 CHARACTER_TOKEN_DIAMETER_INCHES = 1.75
 REMINDER_TOKEN_DIAMETER_INCHES = 1
@@ -81,6 +82,7 @@ def main():
     row_height = 0
     sheet_has_content = False
     pending_token = None
+    row_token_types = "character" if character_tokens else "reminder"
 
     while character_tokens or reminder_tokens or pending_token:
         if pending_token:
@@ -94,21 +96,25 @@ def main():
             reminder_fits = reminder_tokens and (x_pos + REMINDER_TOKEN_SIZE_PX <= MARGIN_PX + PRINTABLE_WIDTH_PX)
 
             if char_fits:
+                row_token_types = "character"
                 token_info = character_tokens.pop()
-            elif reminder_fits:
+            elif reminder_fits and row_token_types != "character":
                 token_info = reminder_tokens.pop()
+                row_token_types = "reminder"
             elif character_tokens: # Neither fits, so we'll wrap. Prioritize char token.
                 token_info = character_tokens.pop()
-            elif reminder_tokens: # No chars left, take a reminder that will wrap.
+            elif reminder_tokens and row_token_types != "character": # No chars left, take a reminder that will wrap.
                 token_info = reminder_tokens.pop()
             else:
-                break # No tokens left
+                token_info = None
 
-        path = token_info['path']
-        size = token_info['size']
+        if token_info:
+            path = token_info['path']
+            size = token_info['size']
 
         # If the token doesn't fit in the current row, move to the next row.
-        if x_pos + size > MARGIN_PX + PRINTABLE_WIDTH_PX:
+        if not token_info or x_pos + size > MARGIN_PX + PRINTABLE_WIDTH_PX:
+            row_token_types = ""
             x_pos = MARGIN_PX
             y_pos += row_height
             row_height = 0
